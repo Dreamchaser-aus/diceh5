@@ -1,6 +1,6 @@
+python-3.10.13
 flask
 psycopg2-binary
-python-dotenv
 apscheduler
 python-telegram-bot==20.7
 nest-asyncio
