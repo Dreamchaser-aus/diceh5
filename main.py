@@ -141,7 +141,20 @@ def run_bot():
     asyncio.run(application.run_polling(close_loop=False, stop_signals=None))
 
 # 启动入口
+# ✅ 保留之前代码不变...
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 if __name__ == "__main__":
     init_db()
-    Thread(target=run_bot).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+    # ✅ Flask 放子线程运行
+    Thread(target=run_flask).start()
+
+    # ✅ Telegram Bot 主线程运行，不能在 Thread 内部使用 asyncio.run()
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+
+    # ✅ 直接运行 polling（无 asyncio.run() 包裹）
+    application.run_polling()
