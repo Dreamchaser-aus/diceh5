@@ -2,6 +2,7 @@ import os
 import random
 import logging
 import asyncio
+import nest_asyncio
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from psycopg2 import connect
@@ -20,7 +21,6 @@ logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 print(f"[DEBUG] BOT_TOKEN = {BOT_TOKEN!r}")
 
 # 数据库连接
@@ -50,7 +50,7 @@ def index():
 def dice_game():
     return render_template("dice_game.html")
 
-# 游戏接口
+# 游戏 API
 @app.route("/api/play_game")
 def api_play_game():
     try:
@@ -100,16 +100,18 @@ def api_play_game():
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎲 欢迎来到骰子游戏机器人！发送 /start 开始")
 
-# 异步启动 bot（解决 run_polling + 子线程问题）
+# 启动 Telegram Bot
 def run_bot():
+    nest_asyncio.apply()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     async def start():
         application = Application.builder().token(BOT_TOKEN).build()
         application.add_handler(CommandHandler("start", start_command))
-        await application.initialize()
-        await application.start()
         await application.run_polling(close_loop=False, stop_signals=None)
 
-    asyncio.run(start())
+    loop.run_until_complete(start())
 
 # 启动入口
 if __name__ == "__main__":
