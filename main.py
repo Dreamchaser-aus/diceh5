@@ -1,7 +1,6 @@
 import os
 import random
 import logging
-import asyncio
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from psycopg2 import connect
@@ -9,60 +8,20 @@ from dotenv import load_dotenv
 from threading import Thread
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from apscheduler.schedulers.background import BackgroundScheduler
 
-# 环境变量加载
+# 加载环境变量
 load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
+ADMIN_KEY = os.getenv("ADMIN_KEY", "123456")  # 可选后台访问密钥
+
 logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-print(f"[DEBUG] BOT_TOKEN = {BOT_TOKEN!r}")
-
-# 数据库连接
 def get_conn():
     return connect(DATABASE_URL)
 
-# 初始化数据库结构
-def init_db():
-    with get_conn() as conn, conn.cursor() as c:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                first_name TEXT,
-                last_name TEXT,
-                username TEXT,
-                phone TEXT,
-                points INTEGER DEFAULT 0,
-                plays INTEGER DEFAULT 0,
-                created_at TEXT,
-                last_play TEXT,
-                invited_by INTEGER,
-                inviter_rewarded INTEGER DEFAULT 0,
-                is_blocked INTEGER DEFAULT 0
-            )
-        """)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS game_history (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT,
-                created_at TEXT,
-                user_score INTEGER,
-                bot_score INTEGER,
-                result TEXT,
-                points_change INTEGER
-            )
-        """)
-        # 插入测试用户（仅当不存在时）
-        c.execute("SELECT COUNT(*) FROM users WHERE user_id = 1111")
-        if c.fetchone()[0] == 0:
-            c.execute("""
-                INSERT INTO users (user_id, first_name, username, phone, created_at)
-                VALUES (1111, '测试用户', 'testuser', '+61000000000', %s)
-            """, (datetime.now().isoformat(),))
-        conn.commit()
-
-# 首页跳转
 @app.route("/")
 def index():
     try:
@@ -80,12 +39,10 @@ def index():
     except Exception as e:
         return f"<pre>数据库错误：{e}</pre>", 500
 
-# 游戏页面
 @app.route("/dice_game")
 def dice_game():
     return render_template("dice_game.html")
 
-# 游戏 API
 @app.route("/api/play_game")
 def api_play_game():
     try:
@@ -131,30 +88,48 @@ def api_play_game():
         import traceback
         return jsonify({"error": "服务器错误", "trace": traceback.format_exc()}), 500
 
+@app.route("/admin")
+def admin_dashboard():
+    key = request.args.get("key")
+    if key != ADMIN_KEY:
+        return "未授权访问", 403
+
+    try:
+        with get_conn() as conn, conn.cursor() as c:
+            c.execute("SELECT user_id, username, phone, points, plays, last_play FROM users ORDER BY created_at DESC LIMIT 50")
+            users = c.fetchall()
+            c.execute("SELECT user_id, user_score, bot_score, result, points_change, created_at FROM game_history ORDER BY created_at DESC LIMIT 50")
+            history = c.fetchall()
+        return render_template("dashboard.html", users=users, history=history)
+    except Exception as e:
+        return f"<pre>读取数据失败：{e}</pre>", 500
+
 # Telegram Bot
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎲 欢迎来到骰子游戏机器人！发送 /start 开始")
 
 def run_bot():
+    import asyncio
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-    asyncio.run(application.run_polling(close_loop=False, stop_signals=None))
 
-# 启动入口
-# ✅ 保留之前代码不变...
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(application.initialize())
+    loop.create_task(application.start())
+    loop.run_forever()
 
-def run_flask():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+# APScheduler 每日重置 plays
+def reset_daily():
+    with get_conn() as conn, conn.cursor() as c:
+        c.execute("UPDATE users SET plays = 0")
+        conn.commit()
+        logging.info("✅ 每日游戏次数已重置")
 
 if __name__ == "__main__":
-    init_db()
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(reset_daily, 'cron', hour=0)
+    scheduler.start()
 
-    # ✅ Flask 放子线程运行
-    Thread(target=run_flask).start()
-
-    # ✅ Telegram Bot 主线程运行，不能在 Thread 内部使用 asyncio.run()
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-
-    # ✅ 直接运行 polling（无 asyncio.run() 包裹）
-    application.run_polling()
+    Thread(target=run_bot).start()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
