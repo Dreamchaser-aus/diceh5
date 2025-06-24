@@ -9,6 +9,8 @@ from threading import Thread
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.background import BackgroundScheduler
+from telegram.ext import MessageHandler, filters
+
 
 # 初始化
 load_dotenv()
@@ -114,6 +116,17 @@ def api_play_game():
 # --- Telegram Bot ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎲 欢迎来到骰子游戏机器人！发送 /start 开始")
+
+async def bind(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = update.effective_user.id
+    username = update.effective_user.username or update.effective_user.first_name
+    try:
+        with get_conn() as conn, conn.cursor() as c:
+            c.execute("UPDATE users SET telegram_id = %s WHERE username = %s OR phone = %s", (telegram_id, username, username))
+            conn.commit()
+        await update.message.reply_text("✅ Telegram 已成功绑定")
+    except Exception as e:
+        await update.message.reply_text("❌ 绑定失败，请稍后重试")
 
 def run_bot():
     import asyncio
