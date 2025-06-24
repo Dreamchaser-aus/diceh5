@@ -107,7 +107,7 @@ def run_bot():
         application.add_handler(CommandHandler("start", start_command))
         await application.initialize()
         await application.start()
-        await application.run_polling()
+        await application.run_polling(close_loop=False, stop_signals=None)
 
     asyncio.run(start())
 
