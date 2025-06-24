@@ -134,6 +134,7 @@ def run_bot():
     asyncio.set_event_loop(loop)
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("bind", bind))
     loop.run_until_complete(application.run_polling(close_loop=False))
 
 # --- 每日重置任务 ---
