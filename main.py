@@ -1,23 +1,30 @@
 import os
 import random
-from datetime import datetime, date
+import logging
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from psycopg2 import connect
 from dotenv import load_dotenv
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import nest_asyncio
-import logging
+from threading import Thread
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes
+)
 
+# 初始化
 load_dotenv()
-nest_asyncio.apply()
 logging.basicConfig(level=logging.INFO)
-
-DATABASE_URL = os.getenv("DATABASE_URL")
 app = Flask(__name__)
+DATABASE_URL = os.getenv("DATABASE_URL")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+# 数据库连接
 def get_conn():
     return connect(DATABASE_URL)
 
+# 首页跳转
 @app.route("/")
 def index():
     try:
@@ -35,10 +42,12 @@ def index():
     except Exception as e:
         return f"<pre>数据库错误：{e}</pre>", 500
 
+# 游戏页面
 @app.route("/dice_game")
 def dice_game():
     return render_template("dice_game.html")
 
+# 游戏 API
 @app.route("/api/play_game")
 def api_play_game():
     try:
@@ -84,6 +93,16 @@ def api_play_game():
         import traceback
         return jsonify({"error": "服务器错误", "trace": traceback.format_exc()}), 500
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+# Telegram Bot 部分（使用 v21+）
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🎲 欢迎来到骰子游戏机器人！发送 /start 开始")
 
+def run_bot():
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.run_polling()
+
+# 启动入口
+if __name__ == "__main__":
+    Thread(target=run_bot).start()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
