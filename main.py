@@ -20,6 +20,8 @@ app = Flask(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+print(f"[DEBUG] BOT_TOKEN = {BOT_TOKEN!r}")
+
 # 数据库连接
 def get_conn():
     return connect(DATABASE_URL)
