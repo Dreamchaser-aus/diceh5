@@ -115,7 +115,11 @@ def api_play_game():
 
 # --- Telegram Bot ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🎲 欢迎来到骰子游戏机器人！发送 /start 开始")
+    user = update.effective_user
+    inviter_id = int(context.args[0]) if context.args else None
+    ...
+    # 存储 Telegram ID 到 users 表
+    c.execute("INSERT INTO users (user_id, ...) VALUES (%s, ...)", (user.id, ...))
 
 async def bind(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
