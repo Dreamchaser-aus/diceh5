@@ -2,23 +2,19 @@ import os
 import random
 import logging
 import asyncio
-import nest_asyncio
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from psycopg2 import connect
 from dotenv import load_dotenv
 from threading import Thread
 from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes
-)
+from telegram.ext import Application, CommandHandler, ContextTypes
 
-# 初始化
+# 环境变量加载
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 print(f"[DEBUG] BOT_TOKEN = {BOT_TOKEN!r}")
@@ -26,6 +22,45 @@ print(f"[DEBUG] BOT_TOKEN = {BOT_TOKEN!r}")
 # 数据库连接
 def get_conn():
     return connect(DATABASE_URL)
+
+# 初始化数据库结构
+def init_db():
+    with get_conn() as conn, conn.cursor() as c:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY,
+                first_name TEXT,
+                last_name TEXT,
+                username TEXT,
+                phone TEXT,
+                points INTEGER DEFAULT 0,
+                plays INTEGER DEFAULT 0,
+                created_at TEXT,
+                last_play TEXT,
+                invited_by INTEGER,
+                inviter_rewarded INTEGER DEFAULT 0,
+                is_blocked INTEGER DEFAULT 0
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS game_history (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                created_at TEXT,
+                user_score INTEGER,
+                bot_score INTEGER,
+                result TEXT,
+                points_change INTEGER
+            )
+        """)
+        # 插入测试用户（仅当不存在时）
+        c.execute("SELECT COUNT(*) FROM users WHERE user_id = 1111")
+        if c.fetchone()[0] == 0:
+            c.execute("""
+                INSERT INTO users (user_id, first_name, username, phone, created_at)
+                VALUES (1111, '测试用户', 'testuser', '+61000000000', %s)
+            """, (datetime.now().isoformat(),))
+        conn.commit()
 
 # 首页跳转
 @app.route("/")
@@ -96,24 +131,17 @@ def api_play_game():
         import traceback
         return jsonify({"error": "服务器错误", "trace": traceback.format_exc()}), 500
 
-# Telegram Bot 命令
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Telegram Bot
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎲 欢迎来到骰子游戏机器人！发送 /start 开始")
 
-# 启动 Telegram Bot
 def run_bot():
-    nest_asyncio.apply()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    async def start():
-        application = Application.builder().token(BOT_TOKEN).build()
-        application.add_handler(CommandHandler("start", start_command))
-        await application.run_polling(close_loop=False, stop_signals=None)
-
-    loop.run_until_complete(start())
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    asyncio.run(application.run_polling(close_loop=False, stop_signals=None))
 
 # 启动入口
 if __name__ == "__main__":
-    Thread(target=run_bot, daemon=True).start()
+    init_db()
+    Thread(target=run_bot).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
