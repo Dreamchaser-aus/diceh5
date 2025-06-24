@@ -1,6 +1,7 @@
 import os
 import random
 import logging
+import asyncio
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from psycopg2 import connect
@@ -49,7 +50,7 @@ def index():
 def dice_game():
     return render_template("dice_game.html")
 
-# 游戏 API
+# 游戏接口
 @app.route("/api/play_game")
 def api_play_game():
     try:
@@ -95,17 +96,23 @@ def api_play_game():
         import traceback
         return jsonify({"error": "服务器错误", "trace": traceback.format_exc()}), 500
 
-# Telegram Bot 部分（使用 v21+）
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Telegram Bot 命令
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎲 欢迎来到骰子游戏机器人！发送 /start 开始")
 
+# 异步启动 bot（解决 run_polling + 子线程问题）
 def run_bot():
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.run_polling()
+    async def start():
+        application = Application.builder().token(BOT_TOKEN).build()
+        application.add_handler(CommandHandler("start", start_command))
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        await application.updater.wait_until_closed()
+
+    asyncio.run(start())
 
 # 启动入口
 if __name__ == "__main__":
-    Thread(target=run_bot).start()
+    Thread(target=run_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-    
